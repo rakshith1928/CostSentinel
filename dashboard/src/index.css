@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Fix Recharts canvas sizing conflict with Tailwind base reset */
+.recharts-wrapper canvas,
+.recharts-surface {
+  max-width: none !important;
+}

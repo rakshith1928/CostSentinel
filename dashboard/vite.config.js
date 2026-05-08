@@ -3,5 +3,15 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  server: { proxy: { '/v1': 'http://localhost:8000', '/health': 'http://localhost:8000' } }
+  server: {
+    proxy: {
+      '/v1': 'http://localhost:8000',
+      '/health': 'http://localhost:8000',
+      '/ws': {
+        target: 'ws://localhost:8000',
+        ws: true,              // ← tells Vite to upgrade to WebSocket
+        changeOrigin: true,
+      },
+    },
+  },
 })

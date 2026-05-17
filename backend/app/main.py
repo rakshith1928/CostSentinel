@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app import redis_client as rc
-from app.routes import chat, admin, health, ws, teams
+from app.routes import chat, admin, health, ws, teams, auth
 
 app = FastAPI(title="CostSentinel", version="0.2.0")
 
@@ -18,6 +18,7 @@ app.include_router(admin.router)
 app.include_router(health.router)
 app.include_router(ws.router) 
 app.include_router(teams.router)
+app.include_router(auth.router)  
 
 @app.on_event("startup")
 async def startup():

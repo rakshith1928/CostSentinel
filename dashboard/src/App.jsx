@@ -1,20 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchHealth, fetchUsers, fetchUsage } from './api'
+import { fetchHealth, fetchUsers, fetchUsage, fetchTeams } from './api'
 import { useWebSocket } from './hooks/useWebSocket'
 import MetricCards from './components/MetricCards'
 import UserTable   from './components/UserTable'
 import UsageChart  from './components/UsageChart'
 import RequestLog  from './components/RequestLog'
-import StatusBar   from './components/StatusBar'
+import TeamsPanel  from './components/TeamsPanel'
 
 export default function App() {
   const [users,   setUsers]   = useState([])
+  const [teams,   setTeams]   = useState([])
   const [history, setHistory] = useState([])
   const [online,  setOnline]  = useState(false)
   const [wsLive,  setWsLive]  = useState(false)
   const [clients, setClients] = useState(0)
 
-  // Full refresh — still used on mount and after budget/reset actions
   const refresh = useCallback(async () => {
     try {
       const h = await fetchHealth()
@@ -37,14 +37,17 @@ export default function App() {
       allHistory.sort((a, b) => b.ts.localeCompare(a.ts))
       setHistory(allHistory)
     } catch {}
+
+    try {
+      const { teams: t } = await fetchTeams()
+      setTeams(t || [])
+    } catch {}
   }, [])
 
-  // Handle incoming WS events
   const handleEvent = useCallback((event) => {
     if (event.type === 'snapshot') {
       setWsLive(true)
       setClients(event.connected_clients || 1)
-      // Snapshot gives us users directly — do a full refresh for history
       refresh()
       return
     }
@@ -52,24 +55,20 @@ export default function App() {
     if (event.type === 'request_completed' || event.type === 'request_blocked') {
       setWsLive(true)
 
-      // Optimistically update the user's token count in state
-      // so the bar animates immediately without a round-trip
       setUsers(prev => {
         const existing = prev.find(u => u.user_id === event.user_id)
         if (existing) {
           return prev.map(u => u.user_id !== event.user_id ? u : {
             ...u,
-            used_tokens:  event.tokens_used_today ?? u.used_tokens,
-            budget_pct:   event.budget_pct        ?? u.budget_pct,
-            status:       event.status             ?? u.status,
+            used_tokens: event.tokens_used_today ?? u.used_tokens,
+            budget_pct:  event.budget_pct        ?? u.budget_pct,
+            status:      event.status             ?? u.status,
           })
         }
-        // New user we haven't seen — trigger a full refresh
         refresh()
         return prev
       })
 
-      // Prepend to request log
       if (event.type === 'request_completed') {
         const entry = {
           ts:             new Date().toISOString(),
@@ -79,15 +78,15 @@ export default function App() {
           total_tokens:   event.total_tokens,
           blocked:        false,
           downgraded:     event.downgraded,
+          team:           event.team ?? null,
         }
         setHistory(prev => [entry, ...prev].slice(0, 100))
+        fetchTeams().then(({ teams: t }) => setTeams(t || [])).catch(() => {})
       }
     }
   }, [refresh])
 
   useWebSocket(handleEvent)
-
-  // Initial load only — no more setInterval
   useEffect(() => { refresh() }, [refresh])
 
   return (
@@ -97,7 +96,6 @@ export default function App() {
           COST<span className="text-[#6b7a6e] font-normal">SENTINEL</span>
         </span>
         <div className="flex items-center gap-4 font-mono text-xs text-[#6b7a6e]">
-          {/* WS live indicator */}
           <span className="flex items-center gap-2">
             <span
               className={`w-2 h-2 rounded-full transition-colors duration-300 ${wsLive ? 'bg-green-400' : 'bg-amber-400'}`}
@@ -121,10 +119,11 @@ export default function App() {
           <UsageChart users={users} />
         </div>
 
+        <TeamsPanel teams={teams} onRefresh={refresh} />
         <RequestLog users={users} history={history} />
 
         <p className="font-mono text-[11px] text-[#6b7a6e] text-right mt-3">
-          {wsLive ? '⚡ real-time via websocket' : '⟳ polling fallback'}
+          {wsLive ? '⚡ real-time via websocket' : '⟳ connecting…'}
         </p>
       </main>
     </div>

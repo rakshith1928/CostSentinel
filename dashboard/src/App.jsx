@@ -48,7 +48,28 @@ export default function App() {
     if (event.type === 'snapshot') {
       setWsLive(true)
       setClients(event.connected_clients || 1)
-      refresh()
+
+      if (event.scope === 'global') {
+        // Admin — full picture
+        setUsers(event.users || [])
+        setTeams(event.teams || [])
+      } else if (event.scope === 'team') {
+        // Member — only their team's data
+        // Map member usage into the same shape as list_users() returns
+        const teamUsers = (event.members || []).map(d => ({
+          user_id:          d.user_id,
+          used_tokens:      d.used_tokens,
+          budget_tokens:    d.budget_tokens,
+          hard_limit_tokens: d.hard_limit_tokens,
+          budget_pct:       d.budget_pct,
+          status:           d.status,
+        }))
+        setUsers(teamUsers)
+        setTeams(event.team_detail ? [event.team_detail] : [])
+      } else {
+        // Fallback — just do a full refresh
+        refresh()
+      }
       return
     }
 
@@ -70,7 +91,7 @@ export default function App() {
       })
 
       if (event.type === 'request_completed') {
-        const entry = {
+        setHistory(prev => [{
           ts:             new Date().toISOString(),
           _user:          event.user_id,
           model:          event.model_used,
@@ -79,9 +100,11 @@ export default function App() {
           blocked:        false,
           downgraded:     event.downgraded,
           team:           event.team ?? null,
-        }
-        setHistory(prev => [entry, ...prev].slice(0, 100))
-        fetchTeams().then(({ teams: t }) => setTeams(t || [])).catch(() => {})
+        }, ...prev].slice(0, 100))
+
+        fetchTeams()
+          .then(({ teams: t }) => setTeams(t || []))
+          .catch(() => {})
       }
     }
   }, [refresh])

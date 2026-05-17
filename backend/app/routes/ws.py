@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from app.ws_manager import manager
 from app.ws_token import verify_token
 from app import redis_client as rc
+from app import team_client as tc
 from app.config import settings
 
 router = APIRouter()
@@ -11,14 +12,12 @@ async def ws_feed(
     websocket: WebSocket,
     token: str = Query(default=""),
 ):
-    # Validate token
     payload = verify_token(token) if token else None
 
-    # If no token and auth is disabled (dev mode) — allow as admin
-    if payload is None and not settings.ws_token_secret != "change-me-in-production":
+    # Dev mode fallback — no secret configured
+    if payload is None and settings.ws_token_secret == "change-me-in-production":
         payload = {"user_id": "dev", "role": "admin", "team": None}
 
-    # If token auth is active and token is invalid — reject
     if payload is None:
         await websocket.close(code=4001)
         return
@@ -30,22 +29,37 @@ async def ws_feed(
     await manager.connect(websocket, user_id, role, team)
 
     try:
-        # Send scoped snapshot on connect
         if role == 'admin':
+            # Admin snapshot — everything
             users = await rc.list_users()
+            teams = await tc.list_teams()
             await websocket.send_json({
-                "type":             "snapshot",
-                "users":            users,
+                "type":              "snapshot",
+                "scope":             "global",
+                "users":             users,
+                "teams":             teams,
                 "connected_clients": manager.count,
             })
         else:
-            # Members only get their own usage on connect
-            detail = await rc.get_user_detail(user_id)
+            # Member snapshot — their team only
+            team_detail  = await tc.get_team_status(team) if team else None
+            team_members = await tc.get_team_members(team) if team else []
+
+            # Fetch usage for every member of their team
+            member_usage = []
+            for uid in team_members:
+                try:
+                    detail = await rc.get_user_detail(uid)
+                    member_usage.append(detail)
+                except Exception:
+                    pass
+
             await websocket.send_json({
-                "type":    "snapshot",
-                "user_id": user_id,
-                "detail":  detail,
-                "connected_clients": manager.count,
+                "type":        "snapshot",
+                "scope":       "team",
+                "team":        team,
+                "team_detail": team_detail,
+                "members":     member_usage,
             })
 
         while True:

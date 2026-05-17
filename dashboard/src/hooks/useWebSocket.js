@@ -1,7 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { fetchWsToken } from '../api'
 
-const WS_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000')
-  .replace(/^http/, 'ws') + '/ws/feed'
+const BASE_WS = (import.meta.env.VITE_API_URL || 'http://localhost:8000')
+  .replace(/^http/, 'ws')
+
+const USER_ID = import.meta.env.VITE_USER_ID || 'admin'
 
 export function useWebSocket(onEvent) {
   const ws        = useRef(null)
@@ -10,26 +13,41 @@ export function useWebSocket(onEvent) {
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (unmounted.current) return
 
-    const socket = new WebSocket(WS_URL)
-    ws.current = socket
+    // Fetch a fresh short-lived token before every connect / reconnect
+    let token = ''
+    try {
+      const data = await fetchWsToken(USER_ID)
+      token = data.token || ''
+    } catch {
+      // If token fetch fails, retry after backoff
+      setTimeout(() => {
+        retryMs.current = Math.min(retryMs.current * 2, 30_000)
+        connect()
+      }, retryMs.current)
+      return
+    }
+
+    const url    = `${BASE_WS}/ws/feed?token=${encodeURIComponent(token)}`
+    const socket = new WebSocket(url)
+    ws.current   = socket
 
     socket.onopen = () => {
-      retryMs.current = 1000   // reset backoff on success
+      retryMs.current = 1000
     }
 
     socket.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data)
-        onEventRef.current(data)
+        onEventRef.current(JSON.parse(e.data))
       } catch {}
     }
 
-    socket.onclose = () => {
+    socket.onclose = (e) => {
       if (unmounted.current) return
-      // Exponential backoff — max 30s
+      // 4001 = rejected by server (bad token) — still retry, token may have
+      // just expired mid-reconnect, a fresh one will be issued on next attempt
       setTimeout(() => {
         retryMs.current = Math.min(retryMs.current * 2, 30_000)
         connect()

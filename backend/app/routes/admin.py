@@ -22,7 +22,12 @@ async def get_usage(user_id: str, x_api_key: Optional[str] = Header(default=None
 @router.put("/budget/{user_id}")
 async def set_budget(user_id: str, payload: dict, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
-    tokens = int(payload.get("tokens", settings.default_budget_tokens))
+    tokens = payload.get("tokens")
+    if tokens is None:
+        raise HTTPException(status_code=422, detail="tokens field required")
+    tokens = int(tokens)
+    if tokens <= 0:
+        raise HTTPException(status_code=422, detail="Budget must be positive")
     await rc.set_budget(user_id, tokens)
     return {"user_id": user_id, "budget_tokens": tokens}
 

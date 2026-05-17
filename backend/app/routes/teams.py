@@ -26,15 +26,16 @@ async def get_team(team: str, x_api_key: Optional[str] = Header(default=None)):
 # ── Create / update team budget ────────────────────────────────────────────────
 
 @router.put("/{team}/budget")
-async def set_team_budget(
-    team: str,
-    payload: dict,
-    x_api_key: Optional[str] = Header(default=None),
-):
+async def set_team_budget(team: str, payload: dict, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
-    tokens = int(payload.get("tokens", settings.default_team_budget_tokens))
-    await tc.set_team_budget(team, tokens)
-    return {"team": team, "budget_tokens": tokens}
+    tokens = payload.get("tokens")
+    if tokens is None:
+        raise HTTPException(status_code=422, detail="tokens field required")
+    try:
+        await tc.set_team_budget(team, int(tokens))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"team": team, "budget_tokens": int(tokens)}
 
 # ── Add member ─────────────────────────────────────────────────────────────────
 

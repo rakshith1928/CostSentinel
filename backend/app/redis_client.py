@@ -3,12 +3,14 @@ import json
 from datetime import datetime, timezone
 import redis.asyncio as aioredis
 from app.config import settings
+from app import team_client as tc 
 
 redis: aioredis.Redis = None
 
 async def init_redis():
     global redis
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    tc.set_redis(redis) 
 
 async def close_redis():
     await redis.aclose()

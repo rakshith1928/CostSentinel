@@ -5,3 +5,5 @@ redis[hiredis]==5.2.0
 tiktoken==0.8.0
 pydantic-settings==2.6.1
 python-multipart==0.0.17
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.29

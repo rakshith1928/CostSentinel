@@ -1,0 +1,28 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": true,
+  
+  "plugin": [
+    "superpowers@git+https://github.com/obra/superpowers.git"
+  ],
+  
+  "skills": {
+    "paths": [
+      "C:/Users/DELL/agent-skills/skills"
+    ]
+  },
+  
+  "instructions": [
+    "C:/Users/DELL/agent-skills/AGENTS.md"
+  ],
+  
+  "permission": {
+    "skill": {
+      "*" : "allow"
+    },
+    "external_directory": {
+      "C:/Users/DELL/agent-skills/**": "allow",
+      "~/.config/opencode/skills/**": "allow"
+    }
+  }
+}

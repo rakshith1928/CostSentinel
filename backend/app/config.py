@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # API & Auth (Required)
     sentinel_api_key: str = ""
+    history_api_admin_key: str = ""  # Separate key for history API
     ws_token_secret: str
     admin_users: str = ""
 

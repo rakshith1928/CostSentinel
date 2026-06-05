@@ -69,14 +69,12 @@ def test_require_admin_auth_valid_admin():
 def test_require_scope_insufficient():
     """Test scope check fails with insufficient scope."""
     mock_admin_context = {"scope": "admin:users:read"}
-    
-    # Create scope checker and call it directly with mocked context
+
     scope_checker = require_scope("admin:history:read")
-    
+
     with pytest.raises(HTTPException) as exc_info:
-        # Bypass FastAPI's Depends by calling with direct argument
-        scope_checker.__call__(mock_admin_context)
-    
+        scope_checker(admin_context=mock_admin_context)
+
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
     assert "Insufficient scope" in str(exc_info.value.detail)
 
@@ -84,12 +82,11 @@ def test_require_scope_insufficient():
 def test_require_scope_sufficient():
     """Test scope check passes with correct scope."""
     mock_admin_context = {"scope": "admin:history:read"}
-    
+
     scope_checker = require_scope("admin:history:read")
-    
-    # Call with valid scope - should not raise
-    result = scope_checker.__call__(mock_admin_context)
-    
+
+    result = scope_checker(admin_context=mock_admin_context)
+
     assert result == mock_admin_context
 def test_check_admin_user():
     """Test admin user check."""

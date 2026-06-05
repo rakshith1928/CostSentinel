@@ -30,6 +30,11 @@ async def init_database():
     """Initialize the database engine and session factory."""
     global _engine, _session_factory
     
+    # Parse SSL mode from DATABASE_URL if present, use connect_args for asyncpg
+    connect_args = {}
+    if "sslmode=require" in settings.database_url:
+        connect_args["ssl"] = "require"
+    
     _engine = create_async_engine(
         settings.database_url,
         echo=settings.database_echo,
@@ -37,6 +42,7 @@ async def init_database():
         max_overflow=settings.database_max_overflow,
         pool_pre_ping=True,
         pool_recycle=3600,
+        connect_args=connect_args,
     )
     
     _session_factory = async_sessionmaker(

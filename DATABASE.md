@@ -470,6 +470,56 @@ WHERE application_name LIKE '%Retention%';
 
 ---
 
+## Migration Guide (Firestore → PostgreSQL)
+
+### Step 1: Update Dependencies
+
+```bash
+cd backend
+pip uninstall google-cloud-firestore
+pip install asyncpg sqlalchemy[asyncio]
+```
+
+### Step 2: Update Environment
+
+```env
+# Remove
+FIRESTORE_PROJECT_ID=
+FIRESTORE_CREDENTIALS_PATH=
+FIRESTORE_ENABLED=false
+
+# Add
+DATABASE_URL=postgresql+asyncpg://...
+DATABASE_POOL_SIZE=10
+```
+
+### Step 3: Update Imports
+
+```python
+# Old (Firestore)
+from app.firestore_client import firestore, get_requests_collection
+
+# New (PostgreSQL)
+from app.database import init_database, get_session
+from app.models.request_history_sqla import RequestHistory
+```
+
+### Step 4: Update Write Path
+
+```python
+# Old (Firestore)
+doc_ref = firestore().collection('requests').document(request_id)
+await doc_ref.set(data)
+
+# New (PostgreSQL)
+async with get_session() as session:
+    stmt = insert(RequestHistory).values(**data)
+    await session.execute(stmt)
+    await session.commit()
+```
+
+---
+
 ## Resources
 
 - [TimescaleDB Documentation](https://docs.timescale.com/)

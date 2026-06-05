@@ -62,8 +62,8 @@ def test_from_request_context():
     assert history.expires_at.day == (now + timedelta(days=90)).day
 
 
-def test_to_firestore_conversion():
-    """Test conversion to Firestore dictionary."""
+def test_to_dict_conversion():
+    """Test conversion to dictionary for database insertion."""
     history = RequestHistory.from_request_context(
         request_id="req_test_002",
         timestamp=datetime.utcnow(),
@@ -80,18 +80,18 @@ def test_to_firestore_conversion():
         latency_ms=100,
         ttl_days=90,
     )
-    
-    firestore_dict = history.to_firestore()
-    
-    assert firestore_dict["id"] == "req_test_002"
-    assert firestore_dict["user_id"] == "user_789"
-    assert firestore_dict["team"] == "team_abc"
-    assert firestore_dict["blocked"] is True
-    assert firestore_dict["block_reason"] == "budget_exceeded"
+
+    data_dict = history.to_dict()
+
+    assert data_dict["id"] == "req_test_002"
+    assert data_dict["user_id"] == "user_789"
+    assert data_dict["team"] == "team_abc"
+    assert data_dict["blocked"] is True
+    assert data_dict["block_reason"] == "budget_exceeded"
 
 
-def test_from_firestore_conversion():
-    """Test reconstruction from Firestore data."""
+def test_from_dict_conversion():
+    """Test reconstruction from database row data."""
     now = datetime.utcnow()
     firestore_data = {
         "id": "req_test_003",
@@ -110,10 +110,108 @@ def test_from_firestore_conversion():
         "expires_at": now + timedelta(days=90),
     }
     
-    history = RequestHistory.from_firestore(firestore_data)
+    history = RequestHistory.from_dict(firestore_data)
     
     assert history.id == "req_test_003"
     assert history.user_id == "user_999"
     assert history.team == "team_xyz"
     assert history.downgraded is True
     assert history.blocked is False
+
+
+def test_expires_at_default_90_days():
+    """Test that expires_at is set to 90 days from now by default."""
+    now = datetime.utcnow()
+    history = RequestHistory.from_request_context(
+        request_id="req_ttl_001",
+        timestamp=now,
+        user_id="ttl_user",
+        team=None,
+        model="ollama/llama2",
+        original_model="ollama/llama2",
+        input_tokens=10,
+        output_tokens=20,
+        total_tokens=30,
+        blocked=False,
+        downgraded=False,
+        block_reason=None,
+        latency_ms=100,
+    )
+
+    expected_expiry = now + timedelta(days=90)
+    time_diff = abs((history.expires_at - expected_expiry).total_seconds())
+
+    # Allow 5 second tolerance for test execution time
+    assert time_diff < 5, f"expires_at should be ~90 days from now, got {time_diff}s difference"
+
+
+def test_expires_at_custom_ttl():
+    """Test that custom TTL days is respected."""
+    now = datetime.utcnow()
+    history = RequestHistory.from_request_context(
+        request_id="req_ttl_002",
+        timestamp=now,
+        user_id="ttl_user",
+        team=None,
+        model="ollama/llama2",
+        original_model="ollama/llama2",
+        input_tokens=10,
+        output_tokens=20,
+        total_tokens=30,
+        blocked=False,
+        downgraded=False,
+        block_reason=None,
+        latency_ms=100,
+        ttl_days=30,
+    )
+
+    expected_expiry = now + timedelta(days=30)
+    time_diff = abs((history.expires_at - expected_expiry).total_seconds())
+
+    assert time_diff < 5, f"expires_at should be ~30 days from now, got {time_diff}s difference"
+
+
+def test_expires_at_is_future():
+    """Test that expires_at is always in the future."""
+    history = RequestHistory.from_request_context(
+        request_id="req_ttl_003",
+        timestamp=datetime.utcnow(),
+        user_id="ttl_user",
+        team=None,
+        model="ollama/llama2",
+        original_model="ollama/llama2",
+        input_tokens=10,
+        output_tokens=20,
+        total_tokens=30,
+        blocked=False,
+        downgraded=False,
+        block_reason=None,
+        latency_ms=100,
+    )
+
+    assert history.expires_at > datetime.utcnow()
+    assert history.expires_at > history.timestamp
+
+
+def test_expires_at_in_to_dict():
+    """Test that expires_at is included in serialized output."""
+    history = RequestHistory.from_request_context(
+        request_id="req_ttl_004",
+        timestamp=datetime.utcnow(),
+        user_id="ttl_user",
+        team=None,
+        model="ollama/llama2",
+        original_model="ollama/llama2",
+        input_tokens=10,
+        output_tokens=20,
+        total_tokens=30,
+        blocked=False,
+        downgraded=False,
+        block_reason=None,
+        latency_ms=100,
+    )
+
+    data = history.to_dict()
+    assert "expires_at" in data
+    assert isinstance(data["expires_at"], datetime)
+    assert data["expires_at"] > datetime.utcnow()

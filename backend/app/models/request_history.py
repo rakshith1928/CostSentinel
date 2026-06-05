@@ -1,4 +1,4 @@
-"""Request History models for Firestore durable storage."""
+"""Request History models for PostgreSQL + TimescaleDB durable storage."""
 
 from datetime import datetime, timedelta
 from typing import Optional
@@ -7,11 +7,18 @@ from pydantic import BaseModel, Field
 
 class RequestHistory(BaseModel):
     """
-    Canonical schema for durable request history in Firestore.
-    
+    Canonical schema for durable request history in PostgreSQL + TimescaleDB.
+
     This model captures all fields required for audit, investigation, and analytics.
-    Documents should be written to the 'requests' collection with TTL policy enabled.
-    
+    Records are stored in the 'request_history' hypertable with TimescaleDB's
+    automatic 90-day retention policy enabled on the `expires_at` field.
+
+    TTL Strategy:
+        - `expires_at` = `datetime.utcnow() + timedelta(days=ttl_days)`
+        - TimescaleDB retention policy deletes records past their expiry
+        - Default TTL: 90 days (configurable via HISTORY_TTL_DAYS env var)
+        - See backend/README.md "TTL Retention Policy" section for setup
+
     Attributes:
         id: Deterministic request ID (format: req_{timestamp}_{hash})
         timestamp: ISO 8601 UTC timestamp of the request
@@ -26,7 +33,7 @@ class RequestHistory(BaseModel):
         downgraded: Whether the model was downgraded
         block_reason: Reason code if blocked (e.g., "budget_exceeded", "rate_limit")
         latency_ms: Total request latency in milliseconds
-        expires_at: TTL field for 90-day auto-deletion (Firestore TTL policy)
+        expires_at: TTL field for 90-day auto-deletion (TimescaleDB retention policy)
     """
     
     id: str = Field(..., description="Deterministic request ID")
@@ -42,7 +49,7 @@ class RequestHistory(BaseModel):
     downgraded: bool = Field(False, description="Whether model was downgraded")
     block_reason: Optional[str] = Field(None, description="Reason code if blocked")
     latency_ms: int = Field(0, description="Total request latency in milliseconds")
-    expires_at: datetime = Field(..., description="TTL field for 90-day auto-deletion")
+    expires_at: datetime = Field(..., description="TTL field for 90-day auto-deletion (TimescaleDB retention policy)")
     
     @classmethod
     def from_request_context(
@@ -102,23 +109,23 @@ class RequestHistory(BaseModel):
             expires_at=expires_at,
         )
     
-    def to_firestore(self) -> dict:
+    def to_dict(self) -> dict:
         """
-        Convert to Firestore-compatible dictionary.
-        
+        Convert to dictionary suitable for database insertion.
+
         Returns:
-            Dictionary suitable for Firestore document set/create
+            Dictionary with all fields for SQLAlchemy insert
         """
         return self.model_dump()
-    
+
     @classmethod
-    def from_firestore(cls, data: dict) -> "RequestHistory":
+    def from_dict(cls, data: dict) -> "RequestHistory":
         """
-        Build from Firestore document data.
-        
+        Build from database row data.
+
         Args:
-            data: Dictionary from Firestore document
-            
+            data: Dictionary from PostgreSQL row
+
         Returns:
             RequestHistory instance
         """

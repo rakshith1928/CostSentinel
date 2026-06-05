@@ -1,5 +1,6 @@
 import time
 import hashlib
+import json
 import httpx
 import tiktoken
 from datetime import datetime, timezone
@@ -16,8 +17,22 @@ def count_tokens(text: str) -> int:
 def resolve_user(request) -> str:
     return request.headers.get("X-User-ID") or request.client.host or "anonymous"
 
-def make_request_id() -> str:
-    return hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
+def make_request_id(user_id: str, model: str, messages: list) -> str:
+    """
+    Generate deterministic request ID for idempotent retries.
+    
+    Format: req_{timestamp}_{hash}
+    timestamp = first 12 chars of content hash (deterministic)
+    hash = last 8 chars of content hash
+    
+    Same request content produces same ID on retry.
+    """
+    messages_json = json.dumps(messages, sort_keys=True, separators=(",", ":"))
+    content = f"{user_id}|{model}|{messages_json}"
+    full_hash = hashlib.md5(content.encode()).hexdigest()
+    timestamp_part = full_hash[:12]
+    hash_suffix = full_hash[12:20]
+    return f"req_{timestamp_part}_{hash_suffix}"
 
 async def call_ollama(model: str, messages: list, options: dict = None) -> dict:
     body = {"model": model, "messages": messages, "stream": False}

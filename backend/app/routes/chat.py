@@ -27,6 +27,9 @@ async def chat_completions(
     orig_model = body.get("model", "llama3.2")
     messages   = body.get("messages", [])
 
+    # Generate deterministic request ID for idempotent retries
+    request_id = proxy.make_request_id(user_id, orig_model, messages)
+
     input_tokens = proxy.count_tokens(
         " ".join(m.get("content", "") for m in messages)
     )
@@ -141,7 +144,7 @@ async def chat_completions(
     })
 
     return {
-        "id": f"cs-{proxy.make_request_id()}",
+        "id": f"cs-{request_id}",
         "object": "chat.completion",
         "model": model,
         "choices": [{"index": 0, "message": {"role": "assistant", "content": assistant_text}, "finish_reason": "stop"}],
@@ -158,6 +161,7 @@ async def chat_completions(
             ),
             "blocked": False,
             "tokens_this_request": total_tokens,
+            "request_id": request_id,
             "user": {
                 "used_tokens": new_user_used,
                 "budget_tokens": user_budget,

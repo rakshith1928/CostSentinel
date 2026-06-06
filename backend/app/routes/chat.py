@@ -7,6 +7,8 @@ from app.config import settings
 from app import redis_client as rc
 from app import team_client as tc
 from app import proxy
+from app.history_persist import persist_request_history
+from app.models.request_history import RequestHistory
 from app.ws_manager import manager
 
 router = APIRouter()
@@ -56,6 +58,22 @@ async def chat_completions(
             "total_tokens": 0, "blocked": True, "downgraded": False,
             "block_reason": "user_budget_exceeded",
         })
+        history_data = RequestHistory.from_request_context(
+            request_id=request_id,
+            timestamp=datetime.now(timezone.utc),
+            user_id=user_id,
+            team=None,
+            model=orig_model,
+            original_model=orig_model,
+            input_tokens=input_tokens,
+            output_tokens=0,
+            total_tokens=0,
+            blocked=True,
+            downgraded=False,
+            block_reason="user_budget_exceeded",
+            latency_ms=0,
+        ).to_dict()
+        background_tasks.add_task(persist_request_history, history_data)
         background_tasks.add_task(manager.broadcast, {
             "type": "request_blocked",
             "user_id": user_id,
@@ -79,6 +97,22 @@ async def chat_completions(
             "block_reason": "team_budget_exceeded",
             "team": team,
         })
+        history_data = RequestHistory.from_request_context(
+            request_id=request_id,
+            timestamp=datetime.now(timezone.utc),
+            user_id=user_id,
+            team=team,
+            model=orig_model,
+            original_model=orig_model,
+            input_tokens=input_tokens,
+            output_tokens=0,
+            total_tokens=0,
+            blocked=True,
+            downgraded=False,
+            block_reason="team_budget_exceeded",
+            latency_ms=0,
+        ).to_dict()
+        background_tasks.add_task(persist_request_history, history_data)
         background_tasks.add_task(manager.broadcast, {
             "type": "request_blocked",
             "user_id": user_id,
@@ -96,8 +130,8 @@ async def chat_completions(
 
     # ── Soft downgrade — either limit triggers it ────────────────────────────
     user_over_soft = user_used >= user_budget
-    team_over_soft = team and team_used >= team_budget
-    downgraded = user_over_soft or team_over_soft
+    team_over_soft = bool(team) and team_used >= team_budget
+    downgraded = bool(user_over_soft or team_over_soft)
     model      = settings.downgrade_model if downgraded else orig_model
 
     start = time.monotonic()
@@ -129,6 +163,22 @@ async def chat_completions(
             "user_soft_limit"  if user_over_soft  else None
         ),
     })
+    history_data = RequestHistory.from_request_context(
+        request_id=request_id,
+        timestamp=datetime.now(timezone.utc),
+        user_id=user_id,
+        team=team,
+        model=model,
+        original_model=orig_model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        blocked=False,
+        downgraded=downgraded,
+        block_reason=None,
+        latency_ms=latency_ms,
+    ).to_dict()
+    background_tasks.add_task(persist_request_history, history_data)
 
     background_tasks.add_task(manager.broadcast, {
         "type": "request_completed",
